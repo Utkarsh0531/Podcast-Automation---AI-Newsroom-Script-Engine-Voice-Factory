@@ -1,1 +1,326 @@
-
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 8 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -512,
+        0
+      ],
+      "id": "a39ada43-a703-47ad-bdf9-75c6039cf366",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": " "
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"sonar-pro\",\n  \"temperature\": 0.25,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a science-podcast writer. Generate exactly 10 **new and distinct topics** related to the **latest advancements in AI, research, science, technology, and innovation** in the last **24 hours**. For each topic, provide a summary that is **exactly 160 words**, which is approximately 1 minute of spoken content. The topics should be based on **real-time news** and **cutting-edge developments**. If any topic deviates from this word count, return an error.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Provide a summary of **10 new, distinct topics** related to **recent advancements** in AI, research, science, technology, and innovation, specifically from the **last 24 hours**. Each topic should be **exactly 160 words**, representing roughly 1 minute of spoken content. Ensure there are **no repeated topics** and that the word count is strictly followed. If any topic deviates from this word count, return an error.\"\n    }\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -304,
+        0
+      ],
+      "id": "96af389a-713f-41e5-9d94-32e4a941dae8",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "/********************************************************************\nn8n Function Node 2 - GENERATE PODCAST SCRIPT\nGoal:\n- Receive data from HTTP Request node (Perplexity API response)\n- Extract 10 topics from the response\n- Generate podcast script in SciSpace Daily Journal format matching sample style\n********************************************************************/\n\nconst inputItems = typeof items !== 'undefined' ? items : [item];\n\n// 1) Safely read Perplexity response\nconst rawText = inputItems[0]?.json?.choices?.[0]?.message?.content ?? \"\";\nconsole.log(\"Raw Text from Perplexity:\", rawText);\n\nif (!rawText || rawText.trim().length === 0) {\n  throw new Error(\"No content received from Perplexity. Please ensure the response contains text.\");\n}\n\n// 2) Enhanced topic extraction function\nconst extractTopics = (text) => {\n  // First, remove any disclaimer sections from the beginning\n  let cleanText = text;\n  \n  // Remove disclaimer patterns from the entire text\n  const disclaimerSections = [\n    /i couldn't find[^.]*\\./gi,\n    /however, i can provide[^.]*\\./gi,\n    /here are ten distinct topics[^.]*\\./gi,\n    /based on available data[^.]*\\./gi\n  ];\n  \n  disclaimerSections.forEach(pattern => {\n    cleanText = cleanText.replace(pattern, '');\n  });\n  \n  // Split by multiple possible delimiters and clean each line\n  const lines = cleanText\n    .split(/[\\n\\r]+/)  // Split by newlines\n    .map(line => line.trim())\n    .filter(line => line.length > 0);\n  \n  console.log(\"All lines from response:\", lines);\n  \n  const topics = [];\n  \n  for (const line of lines) {\n    // Look for numbered topics (1., 2., etc.) or bullet points\n    const topicMatch = line.match(/^(?:\\d+\\.|\\*|\\-|\\•)\\s*(.+)/);\n    if (topicMatch) {\n      const topic = cleanTopicText(topicMatch[1]);\n      if (topic && topic.length > 15 && !isDisclaimedContent(topic)) {\n        topics.push(topic);\n      }\n    }\n  }\n  \n  // If we didn't find enough numbered topics, try to split by common patterns\n  if (topics.length < 7) {\n    const fallbackTopics = lines\n      .filter(line => line.length > 25 && !isDisclaimedContent(line))\n      .slice(0, 15)\n      .map(cleanTopicText)\n      .filter(topic => topic && topic.length > 15);\n    \n    topics.push(...fallbackTopics);\n  }\n  \n  return topics;\n};\n\n// Helper function to detect disclaimed content\nconst isDisclaimedContent = (text) => {\n  const disclaimerKeywords = [\n    'couldnt find', 'couldn\\'t find', 'can\\'t find', 'cant find',\n    'here are', 'however i can', 'based on available',\n    'from the last 24 hours', 'specific news',\n    'summaries of recent', 'advancements in ai'\n  ];\n  \n  const lowerText = text.toLowerCase();\n  return disclaimerKeywords.some(keyword => lowerText.includes(keyword));\n};\n\n// 3) Enhanced topic cleaning function\nconst cleanTopicText = (text) => {\n  const disclaimerPatterns = [\n    /i couldn't find|i couldn't find|i can't find|i cant find/gi,\n    /here are ten distinct topics|here are \\d+ distinct topics/gi,\n    /however, i can provide|however i can provide/gi,\n    /based on available data/gi,\n    /from the last 24 hours/gi,\n    /specific news from/gi,\n    /summaries of recent/gi,\n    /advancements in ai, research, science/gi,\n    /topic \\d+/gi,\n    /^topic\\s+\\d+[:\\-\\.]?\\s*/gi\n  ];\n  \n  let cleaned = text;\n  \n  disclaimerPatterns.forEach(pattern => {\n    cleaned = cleaned.replace(pattern, '');\n  });\n  \n  cleaned = cleaned\n    .replace(/^\\d+\\./, '')\n    .replace(/\\[\\d+\\]/g, '')\n    .replace(/[^\\w\\s\\.,!?\\-]/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .replace(/^[.,!?\\-]+/, '')\n    .replace(/[.,!?\\-]+$/, '')\n    .trim();\n  \n  const metaTextPatterns = [\n    /^(topic|item|subject)\\s*\\d*$/gi,\n    /^(here|there|this|that)\\s+(is|are)/gi,\n    /^(let|now|next|moving|shifting|up)\\s+/gi,\n    /^\\d+\\s*$/,\n    /^(and|or|but)\\s+$/gi\n  ];\n  \n  const isMetaText = metaTextPatterns.some(pattern => pattern.test(cleaned));\n  \n  return isMetaText ? '' : cleaned;\n};\n\n// 4) Enhanced deduplication with similarity checking\nconst areTopicsSimilar = (topic1, topic2) => {\n  const words1 = topic1.toLowerCase().split(/\\s+/);\n  const words2 = topic2.toLowerCase().split(/\\s+/);\n  \n  const commonWords = words1.filter(word => words2.includes(word));\n  const similarity = commonWords.length / Math.min(words1.length, words2.length);\n  \n  return similarity > 0.7;\n};\n\nconst deduplicateTopics = (topics) => {\n  const uniqueTopics = [];\n  \n  for (const topic of topics) {\n    const isDuplicate = uniqueTopics.some(existingTopic => \n      areTopicsSimilar(topic, existingTopic)\n    );\n    \n    if (!isDuplicate) {\n      uniqueTopics.push(topic);\n    }\n  }\n  \n  return uniqueTopics;\n};\n\n// 5) Extract and validate topics\nlet topics = extractTopics(rawText);\nconsole.log(\"Extracted topics:\", topics);\n\ntopics = deduplicateTopics(topics);\nconsole.log(\"Topics after deduplication:\", topics);\n\n// Filter out placeholder topics (like \"topic 1\", \"topic 2\", etc.)\ntopics = topics.filter(topic => {\n  const lowerTopic = topic.toLowerCase().trim();\n  // Reject if it's just \"topic X\" or similar placeholder\n  if (/^topic\\s+\\d+$/.test(lowerTopic) || /^topic\\s+\\d+[:\\-\\.]/.test(lowerTopic)) {\n    return false;\n  }\n  // Reject if it's too short or just a number\n  if (topic.length < 10 || /^\\d+\\s*$/.test(topic)) {\n    return false;\n  }\n  return true;\n});\n\nconsole.log(\"Topics after filtering placeholders:\", topics);\n\nif (topics.length < 7) {\n  throw new Error(`Expected at least 7 topics, but found only ${topics.length}. Please ensure the Perplexity response contains enough distinct, well-formatted topics.`);\n}\n\nconst maxTopics = Math.min(10, topics.length);\ntopics = topics.slice(0, maxTopics);\nconsole.log(`Final ${topics.length} topics:`, topics);\n\n// 6) Helper to extract a clean topic title from raw topic text\nconst extractTopicTitle = (rawTopic, fallbackIndex) => {\n  if (!rawTopic || typeof rawTopic !== \"string\") {\n    return `topic ${fallbackIndex}`;\n  }\n\n  // Try to extract first sentence or meaningful chunk\n  let firstPart = rawTopic.split(/[.!?]/)[0].trim();\n  firstPart = firstPart.replace(/^\\d+[\\)\\.\\-\\:]*\\s*/, \"\").trim();\n\n  // If extraction failed, use the raw topic (truncated if too long)\n  if (!firstPart || /^\\d+\\s*$/.test(firstPart) || firstPart.length < 3) {\n    // Use the raw topic text, but clean it up and truncate if needed\n    let cleaned = rawTopic.trim();\n    cleaned = cleaned.replace(/^\\d+[\\)\\.\\-\\:]*\\s*/, \"\").trim();\n    \n    // Take first 100 characters or first sentence, whichever is shorter\n    const firstSentence = cleaned.split(/[.!?]/)[0].trim();\n    if (firstSentence.length > 10 && firstSentence.length < 100) {\n      return firstSentence;\n    }\n    \n    // Otherwise take first 80 characters\n    if (cleaned.length > 80) {\n      return cleaned.substring(0, 80).trim() + \"...\";\n    }\n    \n    return cleaned || rawTopic.substring(0, 80).trim();\n  }\n\n  return firstPart;\n};\n\n// 7) Generate curiosity hook matching sample style\nconst generateCuriosityHook = (topicTitle, topicIndex) => {\n  // topicIndex: 10 = Number 10, 9 = Next, 8 = Number 8, ..., 1 = Main story\n  // Match exact hooks from sample - some include topic, some don't\n  const hooks = [\n    \"This is huge, folks.\",  // Number 10 (index 0)\n    \"Alright, listen to this.\",  // Next/Number 9 (index 1)\n    \"Alright, buckle up because this is big.\",  // Number 8 (index 2)\n    `This is exciting news from the world of ${topicTitle.toLowerCase()}.`,  // Now let's travel/Number 7 (index 3)\n    `Alright folks, buckle up because ${topicTitle.toLowerCase()}.`,  // The sixth breakthrough/Number 6 (index 4)\n    \"Alright, listen to this.\",  // Number five (index 5)\n    `This is exciting news from the world of ${topicTitle.toLowerCase()}.`,  // Next is/Number 4 (index 6)\n    `Alright folks, buckle up because ${topicTitle.toLowerCase()}.`,  // Number 3 (index 7)\n    `Alright, listen up because ${topicTitle.toLowerCase()}.`,  // And number 2 (index 8)\n    \"Alright, this is huge.\"  // Main story/Number 1 (index 9)\n  ];\n  \n  // Map topicIndex (10..1) to hook index (0..9)\n  const hookIndex = Math.min(10 - topicIndex, hooks.length - 1);\n  return hooks[hookIndex] || hooks[0];\n};\n\n// 8) Generate summary matching exact sample structure\nconst generateSummary = (topic, topicTitle, topicIndex) => {\n  // Check if the hook includes the topic (topicIndex 7, 6, 4, 3, 2 have hooks with topic)\n  // Hook indices: 10->0, 9->1, 8->2, 7->3, 6->4, 5->5, 4->6, 3->7, 2->8, 1->9\n  // Hooks with topic are at indices 3, 4, 6, 7, 8 (which correspond to topicIndex 7, 6, 4, 3, 2)\n  const hookIncludesTopic = [7, 6, 4, 3, 2].includes(topicIndex);\n  \n  // Varied opening phrases (only used when hook doesn't include topic)\n  const openingPhrases = [\n    \"Researchers have stumbled upon something truly remarkable about\",\n    \"Scientists have uncovered something extraordinary about\",\n    \"Scientists have achieved a major breakthrough in\",\n    \"Researchers have just uncovered something incredible about\",\n    \"Scientists have just discovered something extraordinary about\",\n    \"Researchers have just uncovered something incredible about\",\n    \"Researchers have just uncovered something incredible about\",\n    \"Scientists have just discovered something extraordinary about\",\n    \"Researchers have cracked something big in\"\n  ];\n  \n  const openingIndex = Math.min(topicIndex - 1, openingPhrases.length - 1);\n  const opening = openingPhrases[openingIndex] || openingPhrases[0];\n  \n  // Varied \"attention\" phrases\n  const attentionPhrases = [\n    \"It's the kind of finding that stops you in your tracks and makes you say, \\\"Wow.\\\"\",\n    \"This is the sort of discovery that snaps you to attention.\",\n    \"It's the kind of finding that makes you sit up straight and pay attention.\",\n    \"The kind of breakthrough that jolts you to attention and makes you say, \\\"Hold on, this is big.\\\"\",\n    \"It's the sort of finding that snaps you to attention and makes you say, \\\"Whoa, hold on a second.\\\"\",\n    \"It's the kind of finding that grabs you by the collar and makes you pay attention.\",\n    \"The kind of finding that jolts you to attention and makes you say, \\\"Wait a second, this is huge.\\\"\",\n    \"It's the sort of finding that snaps you to attention and makes you say, \\\"Whoa, hold on a second.\\\"\",\n    \"It's the kind of finding that grabs you by the lapels and demands your attention.\",\n    \"It's the kind of discovery that jolts you upright and demands your full attention.\"\n  ];\n  \n  const attentionIndex = Math.min(topicIndex - 1, attentionPhrases.length - 1);\n  const attention = attentionPhrases[attentionIndex] || attentionPhrases[0];\n  \n  // Varied game-changer phrases\n  const gameChangerPhrases = [\n    \"We could be looking at a real game-changer here.\",\n    \"We might be on the brink of a total game-changer here.\",\n    \"We could be staring down the barrel of a total game-changer here.\",\n    \"What we're potentially looking at here is an absolute game-changer.\",\n    \"What we might be looking at here is a real game-changer.\",\n    \"What we might be staring down the barrel of here is an absolute game-changer.\",\n    \"We could be on the precipice of a real game-changer here.\",\n    \"What we might be staring down the barrel of here is an absolute game-changer.\",\n    \"We could be on the brink of a total game-changer here.\",\n    \"We could be staring down the barrel of a total game-changer here.\"\n  ];\n  \n  const gameChangerIndex = Math.min(topicIndex - 1, gameChangerPhrases.length - 1);\n  const gameChanger = gameChangerPhrases[gameChangerIndex] || gameChangerPhrases[0];\n  \n  // Varied leap forward phrases\n  const leapPhrases = [\n    \"The scientific community is abuzz, calling this a giant leap forward.\",\n    \"Experts are already calling it a monumental step forward, one that could utterly redefine our understanding of the field.\",\n    \"The scientific community is calling it a colossal step forward, one with the power to completely reshape our understanding of the field.\",\n    \"Scientists are hailing it as a massive leap forward, the sort of thing that could completely upend our understanding of the field.\",\n    \"The scientific community is already calling it a huge step forward, the kind of thing that could fundamentally alter our understanding of the field.\",\n    \"Scientists are calling it a giant leap forward, the sort of thing that has the power to completely reshape our understanding of the field.\",\n    \"The scientific community is already hailing it as a colossal step forward, the sort of thing that could fundamentally alter our understanding of the field.\",\n    \"The scientific community is already calling it a huge step forward, the kind of thing that could fundamentally reshape our understanding of the field.\",\n    \"Scientists are calling it a giant leap forward, the sort of thing that has the power to completely redefine our understanding of the field.\",\n    \"Scientists are calling it a colossal leap forward, the sort of thing that has the power to completely redefine our understanding of the field.\"\n  ];\n  \n  const leapIndex = Math.min(topicIndex - 1, leapPhrases.length - 1);\n  const leap = leapPhrases[leapIndex] || leapPhrases[0];\n  \n  // Varied implications phrases\n  const implicationsPhrases = [\n    \"And the implications for future studies? Immense.\",\n    \"And when you consider what it means for future research... well, the implications are staggering.\",\n    \"And the implications for future research are nothing short of enormous.\",\n    \"And when you think about what it means for future studies... well, the implications are just staggering.\",\n    \"And the implications for future research? Massive.\",\n    \"And the implications for future studies? Enormous.\",\n    \"And when you consider the implications for future research... well, they're just enormous.\",\n    \"And the implications for future studies? Enormous.\",\n    \"And when you consider what it means for future research... well, the implications are just massive.\",\n    \"And when you consider the implications for future research... well, they're just staggering.\"\n  ];\n  \n  const implicationsIndex = Math.min(topicIndex - 1, implicationsPhrases.length - 1);\n  const implications = implicationsPhrases[implicationsIndex] || implicationsPhrases[0];\n  \n  // Varied timing phrases\n  const timingPhrases = [\n    \"In a world hungry for breakthroughs, this is exactly what we've been waiting for.\",\n    \"This breakthrough couldn't have come at a better time.\",\n    \"This breakthrough is arriving not a moment too soon.\",\n    \"This breakthrough is arriving not a moment too soon.\",\n    \"This breakthrough is arriving not a moment too soon.\",\n    \"This breakthrough couldn't be coming at a better time.\",\n    \"This breakthrough is arriving not a moment too soon.\",\n    \"This breakthrough couldn't be coming at a better time.\",\n    \"This breakthrough is arriving not a moment too soon.\",\n    \"This breakthrough is arriving not a moment too soon.\"\n  ];\n  \n  const timingIndex = Math.min(topicIndex - 1, timingPhrases.length - 1);\n  const timing = timingPhrases[timingIndex] || timingPhrases[0];\n  \n  // Varied simplicity phrases\n  const simplicityPhrases = [\n    \"There's an elegant simplicity to this discovery that belies its incredible potential.\",\n    \"It's precisely what we need right now.\",\n    \"It's exactly what we've been waiting for.\",\n    \"It's exactly what we've been waiting for.\",\n    \"It's exactly what we've been waiting for.\",\n    \"It's precisely what we've been needing.\",\n    \"It's exactly what we've been waiting for.\",\n    \"It's precisely what we've been needing.\",\n    \"It's exactly what we've been waiting for.\",\n    \"It's exactly what we've been waiting for.\"\n  ];\n  \n  const simplicityIndex = Math.min(topicIndex - 1, simplicityPhrases.length - 1);\n  const simplicity = simplicityPhrases[simplicityIndex] || simplicityPhrases[0];\n  \n  // Varied potential phrases\n  const potentialPhrases = [\n    \"But what really gets me excited is imagining how it might change our day-to-day lives.\",\n    \"But here's what really excites me: thinking about how this might actually impact our everyday lives.\",\n    \"But what really gets me fired up is imagining how it might transform the way we live our daily lives.\",\n    \"But what really gets the imagination going is picturing how this might revolutionize our everyday lives.\",\n    \"But what really gets the mind racing is imagining how this might revolutionize the way we live our daily lives.\",\n    \"But what really fires up the imagination is picturing how this could change the way we live our everyday lives.\",\n    \"But what really gets the imagination firing is picturing how this could change the way we live our everyday lives.\",\n    \"But what really fires up the imagination is picturing how this could change the way we live our everyday lives.\",\n    \"But what really gets the mind racing is envisioning how this might revolutionize the way we live our daily lives.\",\n    \"But what really gets the mind racing is imagining how this might revolutionize the way we live our daily lives.\"\n  ];\n  \n  const potentialIndex = Math.min(topicIndex - 1, potentialPhrases.length - 1);\n  const potential = potentialPhrases[potentialIndex] || potentialPhrases[0];\n  \n  // Varied follow-up phrases\n  const followUpPhrases = [\n    \"Researchers are already scrambling to plan follow-up experiments and dig deeper.\",\n    \"As we speak, researchers are gearing up for a slew of follow-up studies to explore this further.\",\n    \"Even as we speak, researchers are scrambling to put together follow-up studies to delve into this further.\",\n    \"Even now, researchers are racing to organize follow-up experiments to explore this in greater depth.\",\n    \"As we speak, researchers are already rushing to put together follow-up experiments to investigate this further.\",\n    \"Even now, researchers are scrambling to organize follow-up studies to explore this in greater depth.\",\n    \"As we speak, researchers are already racing to put together follow-up experiments to investigate this further.\",\n    \"As we speak, researchers are already rushing to put together follow-up experiments to investigate this further.\",\n    \"Even now, researchers are scrambling to organize follow-up studies to delve into this more deeply.\",\n    \"Even now, researchers are scrambling to organize follow-up studies to delve into this more deeply.\"\n  ];\n  \n  const followUpIndex = Math.min(topicIndex - 1, followUpPhrases.length - 1);\n  const followUp = followUpPhrases[followUpIndex] || followUpPhrases[0];\n  \n  // Varied paradigm shift phrases\n  const paradigmPhrases = [\n    \"This isn't just a step in a new direction... it's a fundamental reshaping of our approach to the problem.\",\n    \"This isn't just a new approach to the problem—it represents a total paradigm shift.\",\n    \"This isn't just a new approach to the problem—it represents a total paradigm shift.\",\n    \"This isn't just a fresh take on the problem—it's a total realignment of our approach.\",\n    \"This isn't just a new perspective on the problem—it's a complete paradigm shift in our approach.\",\n    \"This isn't just a fresh take on the problem—it represents a total realignment of our approach.\",\n    \"This isn't just a new perspective on the problem—it's a complete paradigm shift in our approach.\",\n    \"This isn't just a new perspective on the problem—it's a complete paradigm shift in our approach.\",\n    \"This isn't just a fresh take on the problem—it represents a total realignment of our approach.\",\n    \"This isn't just a fresh take on the problem—it represents a total realignment of our approach.\"\n  ];\n  \n  const paradigmIndex = Math.min(topicIndex - 1, paradigmPhrases.length - 1);\n  const paradigm = paradigmPhrases[paradigmIndex] || paradigmPhrases[0];\n  \n  // Varied timing perfect phrases\n  const timingPerfectPhrases = [\n    \"And the timing couldn't be better.\",\n    \"The timing is absolutely perfect.\",\n    \"And the timing couldn't be more perfect.\",\n    \"And the timing couldn't be more perfect.\",\n    \"And the timing couldn't be more perfect.\",\n    \"And the timing is absolutely perfect.\",\n    \"And the timing couldn't be more perfect.\",\n    \"And the timing is absolutely perfect.\",\n    \"And the timing couldn't be more perfect.\",\n    \"And the timing couldn't be more perfect.\"\n  ];\n  \n  const timingPerfectIndex = Math.min(topicIndex - 1, timingPerfectPhrases.length - 1);\n  const timingPerfect = timingPerfectPhrases[timingPerfectIndex] || timingPerfectPhrases[0];\n  \n  // Varied connection phrases\n  const connectionPhrases = [\n    \"What sets this apart is how beautifully it connects the theoretical with the practical.\",\n    \"What makes this so special is the way it seamlessly merges theory and practical application.\",\n    \"What sets this discovery apart is the way it effortlessly bridges the gap between theory and practical application.\",\n    \"What makes this discovery so remarkable is how it seamlessly unites theory with practical application.\",\n    \"What sets this discovery apart is the way it effortlessly merges theory with practical application.\",\n    \"What makes this discovery so special is how it seamlessly bridges the gap between theory and practical application.\",\n    \"What sets this discovery apart is the way it effortlessly unites theory with practical application.\",\n    \"What sets this discovery apart is the way it effortlessly merges theory with practical application.\",\n    \"What makes this discovery so remarkable is how it seamlessly bridges the gap between theory and practical application.\",\n    \"What makes this discovery so special is how it seamlessly bridges the gap between theory and practical application.\"\n  ];\n  \n  const connectionIndex = Math.min(topicIndex - 1, connectionPhrases.length - 1);\n  const connection = connectionPhrases[connectionIndex] || connectionPhrases[0];\n  \n  // Varied missing link phrases\n  const missingLinkPhrases = [\n    \"Scientists are hailing it as the missing link they've been searching for.\",\n    \"Scientists are calling it the missing piece of the puzzle they've been after for years.\",\n    \"Scientists are hailing it as the missing piece of the puzzle they've been searching for all this time.\",\n    \"Scientists are calling it the long-lost missing link they've been searching for.\",\n    \"Scientists are hailing it as the long-lost missing link they've been searching for all this time.\",\n    \"Scientists are hailing it as the long-lost missing piece they've been searching for all this time.\",\n    \"Scientists are calling it the long-lost missing piece they've been searching for all this time.\",\n    \"Scientists are hailing it as the long-lost missing piece they've been searching for all this time.\",\n    \"Scientists are calling it the long-lost missing link they've been searching for all this time.\",\n    \"Scientists are hailing it as the long-lost missing link they've been searching for all this time.\"\n  ];\n  \n  const missingLinkIndex = Math.min(topicIndex - 1, missingLinkPhrases.length - 1);\n  const missingLink = missingLinkPhrases[missingLinkIndex] || missingLinkPhrases[0];\n  \n  // Varied impact phrases\n  const impactPhrases = [\n    \"And its impact is likely to reverberate for generations to come.\",\n    \"And its ripple effects? We could be feeling those for decades to come.\",\n    \"And its impact? We could be feeling the ripple effects of this for decades to come.\",\n    \"And its effects? We could be seeing the ripples from this for generations to come.\",\n    \"And its impact? We could be feeling the ripple effects from this for decades to come.\",\n    \"And its effects? We could be seeing the ripples from this for generations to come.\",\n    \"And its impact? We could be feeling the ripple effects from this for decades to come.\",\n    \"And its impact? We could be feeling the ripple effects from this for decades to come.\",\n    \"And its effects? We could be seeing the ripples from this for generations to come.\",\n    \"And its effects? We could be seeing the ripples from this for generations to come.\"\n  ];\n  \n  const impactIndex = Math.min(topicIndex - 1, impactPhrases.length - 1);\n  const impact = impactPhrases[impactIndex] || impactPhrases[0];\n  \n  // Build the complete summary\n  // If hook includes topic, start with attention phrase; otherwise start with opening + topic + attention\n  let summary = \"\";\n  if (hookIncludesTopic) {\n    summary = `${attention} `;\n  } else {\n    summary = `${opening} ${topicTitle.toLowerCase()}. ${attention} `;\n  }\n  \n  summary += `\\n\\n${gameChanger} ${leap} ${implications} `;\n  summary += `\\n\\n${timing} ${simplicity} ${potential} `;\n  summary += `\\n\\n${followUp} ${paradigm} ${timingPerfect} `;\n  summary += `\\n\\n${connection} ${missingLink} ${impact} `;\n  \n  return summary;\n};\n\n// 9) Build the podcast script\nconst firstTopicTitle = topics[0]\n  ? extractTopicTitle(topics[0], 1)\n  : \"the latest breakthrough\";\nconst extraTopicCount = Math.max(topics.length - 1, 0);\nlet extraTopicsText = \"\";\n\nif (extraTopicCount === 1) {\n  extraTopicsText = \", plus one more breakthrough\";\n} else if (extraTopicCount > 1) {\n  extraTopicsText = `, plus ${extraTopicCount} more breakthroughs`;\n}\n\nconst intro = [\n  \"Hey there, curious minds! Welcome to Daily Journal by SciSpace.\",\n  \"With a community of 4.1 million researchers, this podcast brings you the breakthroughs that are sparking curiosity right now.\",\n  `My name is Noah Field, and today we're talking about ${firstTopicTitle.toLowerCase()}${extraTopicsText} across quantum science, AI, space exploration, climate research, and more.`,\n  \"So, let's jump right in!\"\n].join(\" \");\n\nconst lines = [];\nlines.push(intro, \"\");\n\n// Generate script for topics counting down from highest number\nconst totalTopics = topics.length;\nconst highestNumber = totalTopics; // If 8 topics, highest is 8\n\n// Generate transitions dynamically based on number of topics\nconst generateTransition = (currentNumber, totalCount, index) => {\n  // First topic (highest number) gets \"Number X, is\"\n  if (index === 0) {\n    return `Number ${currentNumber}, is`;\n  }\n  \n  // If it's the last one before main story (number 2), use \"And number 2\"\n  if (currentNumber === 2) {\n    return \"And number 2.\";\n  }\n  \n  // Pattern based on position (matching sample style)\n  // Use a mix of \"Number X\", \"Next\", \"Now let's travel\", etc.\n  let transition;\n  \n  if (index === 1) {\n    transition = \"Next.\";\n  } else if (index === 2) {\n    transition = `Number ${currentNumber}.`;\n  } else if (index === 3) {\n    transition = \"Now let's travel.\";\n  } else if (index === 4) {\n    // Use \"The Xth breakthrough\" for numbers 6 or below, otherwise \"Number X\"\n    if (currentNumber <= 6) {\n      transition = `The ${getOrdinalWord(currentNumber)} breakthrough.`;\n    } else {\n      transition = `Number ${currentNumber}.`;\n    }\n  } else if (index === 5) {\n    // Use ordinal word only for 5 (sounds natural), otherwise regular number\n    if (currentNumber === 5) {\n      transition = `Number ${getOrdinalWord(currentNumber)}.`;\n    } else {\n      transition = `Number ${currentNumber}.`;\n    }\n  } else if (index === 6) {\n    transition = \"Next is.\";\n  } else {\n    transition = `Number ${currentNumber}.`;\n  }\n  \n  return transition;\n};\n\n// Helper to get ordinal word\nconst getOrdinalWord = (n) => {\n  const ordinals = {\n    1: \"first\", 2: \"second\", 3: \"third\", 4: \"fourth\", 5: \"fifth\",\n    6: \"sixth\", 7: \"seventh\", 8: \"eighth\", 9: \"ninth\", 10: \"tenth\"\n  };\n  return ordinals[n] || `${n}th`;\n};\n\n// Process topics 2 through N (indices 1 through totalTopics-1)\n// These will be numbered from highestNumber down to 2\nfor (let i = 1; i < totalTopics; i++) {\n  const currentNumber = highestNumber - i + 1; // Counts down: 8, 7, 6, 5, 4, 3, 2\n  const topicTitle = extractTopicTitle(topics[i], i + 1);\n  const transitionIndex = i - 1; // Index in the transitions (0-based for first non-main topic)\n  \n  // Generate transition\n  const transition = generateTransition(currentNumber, totalTopics, transitionIndex);\n  \n  // Add topic introduction\n  if (transitionIndex === 0) {\n    // First topic gets \"Number X, is topic\"\n    lines.push(`${transition} ${topicTitle.toLowerCase()}.`);\n  } else {\n    // Others get transition on one line, topic on next\n    lines.push(`${transition}`);\n    lines.push(`${topicTitle.toLowerCase()}.`);\n  }\n  \n  // Generate curiosity hook\n  const curiosityHook = generateCuriosityHook(topicTitle, currentNumber);\n  lines.push(curiosityHook);\n  \n  // Generate the summary\n  const topicSummary = generateSummary(topics[i], topicTitle, currentNumber);\n  lines.push(topicSummary);\n  lines.push(\"\");\n}\n\n// Add the main story (topic 1) at the end\nif (topics.length > 0) {\n  const mainTopicTitle = extractTopicTitle(topics[0], 1);\n  const mainCuriosityHook = generateCuriosityHook(mainTopicTitle, 1);\n  const mainTopicSummary = generateSummary(topics[0], mainTopicTitle, 1);\n  \n  lines.push(\"\");\n  lines.push(`Now, finally let's dive into our main story: ${mainTopicTitle.toLowerCase()}.`);\n  lines.push(mainCuriosityHook);\n  lines.push(mainTopicSummary);\n  lines.push(\"\");\n}\n\n// Closing statement\nconst closing = [\n  \"That's all for today's Daily Journal by SciSpace.\",\n  \"If you'd like to go deeper into any of these stories, you can explore the full research trail using SciSpace Agent, your all-in-one AI research assistant.\",\n  \"Thanks for listening, and as always, stay curious.\"\n].join(\" \");\n\nlines.push(closing);\n\n// Format and return the final script\nconst formattedScript = lines.join(\"\\n\").trim();\n\nreturn [{ \n  json: { \n    formattedScript,\n    topicCount: topics.length,\n    topics: topics\n  } \n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        0
+      ],
+      "id": "dbdd9882-c6b9-452c-8f15-08fc322a1249",
+      "name": "Perplexity Script"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": " "
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "2faa08b9-9bc3-449e-9e0c-2a9f943e1ccd",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/zGjIP4SZlMnY9m93k97r",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xi-api-key",
+              "value": "01a1a944858de279e928d0f43511429600659973433e727d8bb1f6274ad83e56"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "model_id",
+              "value": "eleven_v3"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "=json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $node['HTTP Request1'].json['content'][0]['text'].slice(0, 10000) }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        -128
+      ],
+      "id": "e6fd8985-ad40-40b4-b7bb-5edeb3a87d29",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "name": "=podcast_{{ $now.format(\"MM-DD\") }}.mp3",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1rMU-TDhscoXxpPAznLYDEGYqbVme5f3J",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        896,
+        -128
+      ],
+      "id": "27c0eef5-7b6d-4fb9-bfa5-7602c765e370",
+      "name": "Upload file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "0CGiaNOeGmggboM4",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const script = $node[\"Perplexity Script\"].json[\"formattedScript\"];\n\nreturn [{\n  json: {\n    model: \"claude-sonnet-4-5\",\n    max_tokens: 4000,\n    temperature: 0.6,\n    system:\n      \"You are a skilled podcast script editor and storyteller. Maintain factual accuracy and length, but make rewritten sections sound natural, conversational, and emotionally engaging — like a curious, well-informed host talking to listeners, not like an AI.\",\n    messages: [\n      {\n        role: \"user\",\n        content: `Here is the full podcast script that needs selective rewriting:\\n\\n${script}\\n\\nRewrite **only** the story sections that describe each news item or numbered topic.\\n\\nKeep the **intro** (everything before the first story begins) and the **outro** (everything after the final closing line) exactly as they are—do not change a single word there.\\n\\nFor each story section:\\n- Keep all facts and order identical.\\n- Rewrite for a warm, human podcast tone: slower, curious, lightly expressive.\\n- Use natural phrasing and rhythm that sounds good when spoken aloud.\\n- Add gentle pauses with punctuation (commas, ellipses, or line breaks) where a host would breathe.\\n- Do not add or remove stories.\\n\\nReturn the complete script, preserving the original intro and outro exactly, with only the story sections rewritten in this improved style.`\n      }\n    ]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        0
+      ],
+      "id": "11bf613e-1118-4fa3-920f-c3e148ae131d",
+      "name": "Claude Rewrite"
+    },
+    {
+      "parameters": {
+        "folderId": "15GK3l-maETX7Yafy4u9VRoxaqSMR5O2r",
+        "title": "=Daily Journal - {{$now.format(\"MM-DD\")}}"
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        672,
+        128
+      ],
+      "id": "47371931-fc5e-4d40-bcf7-8aa85e1b2bd6",
+      "name": "Doc1",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "96p5gQXxBE3HRCp4",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ $node[\"Doc1\"].json[\"id\"] }}",
+        "actionsUi": {
+          "actionFields": [
+            {
+              "action": "insert",
+              "text": "={{ $node[\"HTTP Request1\"].json[\"content\"][0][\"text\"] }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        896,
+        128
+      ],
+      "id": "76b4adcf-a7ed-4177-a08b-4d34709eae4b",
+      "name": "Doc2",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "96p5gQXxBE3HRCp4",
+          "name": "Google Docs account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Perplexity Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity Script": {
+      "main": [
+        [
+          {
+            "node": "Claude Rewrite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Doc1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Upload file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Rewrite": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Doc1": {
+      "main": [
+        [
+          {
+            "node": "Doc2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Doc2": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "522b2c0e4ca60b594298b45ef7f4ef344bff1e93a651214a2dff3d8ebba02bde"
+  }
+}
